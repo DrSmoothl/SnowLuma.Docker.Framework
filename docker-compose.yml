@@ -1,11 +1,6 @@
 services:
   snowluma:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      platforms:
-        - linux/amd64
-    image: ${SNOWLUMA_IMAGE:-snowluma-docker-framework:latest}
+    image: ${SNOWLUMA_IMAGE:-motricseven7/snowluma:latest}
     container_name: ${SNOWLUMA_CONTAINER:-snowluma}
     restart: unless-stopped
     shm_size: 1gb

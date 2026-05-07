@@ -16,9 +16,13 @@ on:
         required: true
         type: boolean
         default: false
+      platforms:
+        description: Docker target platforms
+        required: true
+        default: "linux/amd64,linux/arm64"
 
 jobs:
-  build-amd64:
+  build:
     runs-on: ubuntu-22.04
     environment: SnowLuma
     steps:
@@ -43,6 +47,7 @@ jobs:
           IMAGE: ${{ inputs.image }}
           TAG: ${{ inputs.tag }}
           PUSH: ${{ inputs.push }}
+          PLATFORMS: ${{ inputs.platforms }}
         run: |
           set -eu
           if [ -z "${IMAGE}" ]; then
@@ -53,12 +58,18 @@ jobs:
             echo "workflow input tag is required"
             exit 1
           fi
+          if [ -z "${PLATFORMS}" ]; then
+            echo "workflow input platforms is required"
+            exit 1
+          fi
           OUTPUT="--load"
           if [ "${PUSH}" = "true" ]; then
             OUTPUT="--push"
+          elif echo "${PLATFORMS}" | grep -q ','; then
+            OUTPUT="--output=type=oci,dest=/tmp/snowluma-image.tar"
           fi
           docker buildx build \
-            --platform linux/amd64 \
+            --platform "${PLATFORMS}" \
             --tag "${IMAGE}:${TAG}" \
             --tag "${IMAGE}:latest" \
             --file ./Dockerfile \

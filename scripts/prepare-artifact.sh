@@ -19,6 +19,9 @@ required_entries=(
   "native/snowluma-linux-x64.node"
   "native/snowluma-linux-x64.so"
   "native/websocket-linux-x64.node"
+  "native/snowluma-linux-arm64.node"
+  "native/snowluma-linux-arm64.so"
+  "native/websocket-linux-arm64.node"
 )
 
 archive_entries="$(tar -tzf "${ARTIFACT_PATH}" | sed 's#^\./##')"

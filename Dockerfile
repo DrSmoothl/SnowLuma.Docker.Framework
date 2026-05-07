@@ -4,6 +4,9 @@ ARG NODE_VERSION=22
 FROM node:${NODE_VERSION}-bookworm-slim
 
 ARG TARGETARCH=amd64
+ARG QQ_VERSION=3.2.28-48517
+ARG QQ_CHANNEL=f9cbaab2
+ARG QQ_BASE_URL=https://dldir1v6.qq.com/qqfile/qq/QQNT
 
 ENV DEBIAN_FRONTEND=noninteractive \
     VNC_PASSWD=vncpasswd \
@@ -59,12 +62,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    if [ "${TARGETARCH}" != "amd64" ]; then \
-      echo "SnowLuma Docker framework currently packages linux/amd64 only. Missing hook native binaries for ${TARGETARCH}."; \
-      exit 1; \
-    fi && \
+    set -eux; \
+    case "${TARGETARCH}" in \
+      amd64|arm64) qq_arch="${TARGETARCH}" ;; \
+      *) echo "Unsupported Docker target architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
     apt-get update && \
-    aria2c --check-certificate=false -x16 -s16 -o /tmp/linuxqq.deb "https://dldir1.qq.com/qqfile/qq/QQNT/8015ff90/linuxqq_3.2.21-42086_amd64.deb" && \
+    aria2c --check-certificate=false -x16 -s16 -o /tmp/linuxqq.deb "${QQ_BASE_URL}/${QQ_CHANNEL}/linuxqq_${QQ_VERSION}_${qq_arch}.deb" && \
     (dpkg -i /tmp/linuxqq.deb || apt-get -f install -y --no-install-recommends) && \
     rm -f /tmp/linuxqq.deb && \
     chmod 777 /opt/QQ && \
@@ -80,10 +84,15 @@ RUN chmod +x /root/start.sh && \
     useradd --no-log-init --uid 1001 --gid 1001 --home-dir /app --shell /bin/bash snowluma && \
     mkdir -p "${SNOWLUMA_HOME}" "${SNOWLUMA_DATA}" /app/.cache /app/.config /app/.local/share && \
     tar -xzf /tmp/SnowLuma.Framework.tar.gz -C "${SNOWLUMA_HOME}" && \
+    case "${TARGETARCH}" in \
+      amd64) native_arch="x64" ;; \
+      arm64) native_arch="arm64" ;; \
+      *) echo "Unsupported Docker target architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
     test -f "${SNOWLUMA_HOME}/index.mjs" && \
-    test -f "${SNOWLUMA_HOME}/native/snowluma-linux-x64.node" && \
-    test -f "${SNOWLUMA_HOME}/native/snowluma-linux-x64.so" && \
-    test -f "${SNOWLUMA_HOME}/native/websocket-linux-x64.node" && \
+    test -f "${SNOWLUMA_HOME}/native/snowluma-linux-${native_arch}.node" && \
+    test -f "${SNOWLUMA_HOME}/native/snowluma-linux-${native_arch}.so" && \
+    test -f "${SNOWLUMA_HOME}/native/websocket-linux-${native_arch}.node" && \
     rm -f /tmp/SnowLuma.Framework.tar.gz && \
     chown -R snowluma:snowluma /app /opt/QQ
 

@@ -45,7 +45,9 @@ SnowLuma.Framework.tar.gz
 
 它会校验仓库根目录的 `SnowLuma.Framework.tar.gz`，然后构建 Docker 镜像 `snowluma-docker-framework:latest`。
 
-发布 multi-arch 镜像时使用 buildx push：
+发布 multi-arch 镜像推荐使用 GitHub Actions。workflow 会在原生 `ubuntu-22.04` 和 `ubuntu-22.04-arm` runner 上分别构建 amd64/arm64 镜像，再合并 manifest。
+
+本地也可以用 buildx push，但是否使用模拟取决于你的本地 buildx/binfmt 环境：
 
 ```bash
 IMAGE=motricseven7/snowluma:latest PUSH=1 ./scripts/build-image.sh

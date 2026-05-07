@@ -22,8 +22,44 @@ on:
         default: "linux/amd64,linux/arm64"
 
 jobs:
-  build:
+  resolve:
     runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Resolve target platforms
+        id: matrix
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          set -eu
+          matrix='{"include":['
+          separator=''
+          case ",${PLATFORMS}," in
+            *",linux/amd64,"*)
+              matrix="${matrix}${separator}{\"arch\":\"amd64\",\"platform\":\"linux/amd64\",\"os\":\"ubuntu-22.04\"}"
+              separator=','
+              ;;
+          esac
+          case ",${PLATFORMS}," in
+            *",linux/arm64,"*)
+              matrix="${matrix}${separator}{\"arch\":\"arm64\",\"platform\":\"linux/arm64\",\"os\":\"ubuntu-22.04-arm\"}"
+              separator=','
+              ;;
+          esac
+          matrix="${matrix}]}"
+          if [ "${matrix}" = '{"include":[]}' ]; then
+            echo "No supported platforms selected. Use linux/amd64, linux/arm64, or both." >&2
+            exit 1
+          fi
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
     environment: SnowLuma
     steps:
       - name: Checkout Docker framework
@@ -47,7 +83,7 @@ jobs:
           IMAGE: ${{ inputs.image }}
           TAG: ${{ inputs.tag }}
           PUSH: ${{ inputs.push }}
-          PLATFORMS: ${{ inputs.platforms }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           set -eu
           if [ -z "${IMAGE}" ]; then
@@ -58,23 +94,90 @@ jobs:
             echo "workflow input tag is required"
             exit 1
           fi
-          if [ -z "${PLATFORMS}" ]; then
-            echo "workflow input platforms is required"
+          if [ "${PUSH}" = "true" ]; then
+            docker buildx build \
+              --platform "${PLATFORM}" \
+              --tag "${IMAGE}" \
+              --file ./Dockerfile \
+              --output "type=image,push-by-digest=true,name-canonical=true,push=true" \
+              --metadata-file metadata.json \
+              .
+            digest="$(jq -r '."containerimage.digest"' metadata.json)"
+            if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+              echo "Unable to resolve pushed image digest" >&2
+              cat metadata.json >&2
+              exit 1
+            fi
+            mkdir -p digests
+            touch "digests/${digest#sha256:}"
+          else
+            docker buildx build \
+              --platform "${PLATFORM}" \
+              --tag "${IMAGE}:${TAG}" \
+              --file ./Dockerfile \
+              --load \
+              .
+          fi
+
+      - name: Upload Docker image digest
+        if: ${{ inputs.push }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-digest-${{ matrix.arch }}
+          path: digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Docker logout
+        if: ${{ always() && inputs.push }}
+        run: docker logout || true
+
+  merge:
+    if: ${{ inputs.push }}
+    needs:
+      - resolve
+      - build
+    runs-on: ubuntu-22.04
+    environment: SnowLuma
+    steps:
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Download Docker image digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: docker-digest-*
+          path: digests
+          merge-multiple: true
+
+      - name: Create Docker manifest
+        run: |
+          set -euo pipefail
+          image="${{ inputs.image }}"
+          tag="${{ inputs.tag }}"
+          cd digests
+          shopt -s nullglob
+          digest_files=(*)
+          if [ "${#digest_files[@]}" -eq 0 ]; then
+            echo "No Docker image digests were produced" >&2
             exit 1
           fi
-          OUTPUT="--load"
-          if [ "${PUSH}" = "true" ]; then
-            OUTPUT="--push"
-          elif echo "${PLATFORMS}" | grep -q ','; then
-            OUTPUT="--output=type=oci,dest=/tmp/snowluma-image.tar"
+          refs=()
+          for digest in "${digest_files[@]}"; do
+            refs+=("${image}@sha256:${digest}")
+          done
+          tags=(--tag "${image}:${tag}")
+          if [ "${tag}" != "latest" ]; then
+            tags+=(--tag "${image}:latest")
           fi
-          docker buildx build \
-            --platform "${PLATFORMS}" \
-            --tag "${IMAGE}:${TAG}" \
-            --tag "${IMAGE}:latest" \
-            --file ./Dockerfile \
-            ${OUTPUT} \
-            .
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          docker buildx imagetools inspect "${image}:${tag}"
 
       - name: Docker logout
         if: always()

@@ -1,5 +1,8 @@
 name: docker-publish
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   workflow_dispatch:
     inputs:
@@ -63,13 +66,13 @@ jobs:
     environment: SnowLuma
     steps:
       - name: Checkout Docker framework
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Verify prebuilt SnowLuma artifact
         run: ./scripts/prepare-artifact.sh
 
       - name: Set up Docker buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
         if: ${{ inputs.push }}
@@ -121,7 +124,7 @@ jobs:
 
       - name: Upload Docker image digest
         if: ${{ inputs.push }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-digest-${{ matrix.arch }}
           path: digests/*
@@ -141,7 +144,7 @@ jobs:
     environment: SnowLuma
     steps:
       - name: Set up Docker buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -150,7 +153,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Download Docker image digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: docker-digest-*
           path: digests

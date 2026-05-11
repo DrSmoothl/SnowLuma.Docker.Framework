@@ -41,6 +41,11 @@ chown -R "${SNOWLUMA_UID}:${SNOWLUMA_GID}" \
   "${XDG_RUNTIME_DIR}"
 chmod 700 "${XDG_RUNTIME_DIR}"
 
+# Docker restart can preserve stale AF_UNIX socket nodes in the container
+# writable layer. Remove them before QQ starts so PID reuse cannot make a dead
+# hook socket look like a live SnowLuma injection.
+find "${XDG_RUNTIME_DIR}" -maxdepth 1 -type s -name 'mojo.*.*.sock' -delete 2>/dev/null || true
+
 node <<'NODE'
 const fs = require('fs');
 const path = require('path');
